@@ -102,7 +102,7 @@ html,body{height:100%}body{height:100dvh;overflow:hidden}
    <div class="ltools">
     <button id="searchLyrics">Buscar</button><button id="editLyrics">Editar</button><button id="syncLyrics">Sincronizar</button>
     <button id="offsetPlus" class="quiet" title="Adelantar la letra 0,5 s">Letra antes</button><button id="offsetReset" class="quiet">Reiniciar</button><button id="offsetMinus" class="quiet" title="Retrasar la letra 0,5 s">Letra después</button>
-    <button id="iaOpen">✦ Instrumental IA</button>
+    <button id="iaOpen">✦ Instrumental</button>
    </div>
   </section>
   <section id="tab-lib" class="pane" hidden>
@@ -146,7 +146,8 @@ html,body{height:100%}body{height:100dvh;overflow:hidden}
  <div id="syncPreview" class="sync-list"></div>
 </dialog>
 <dialog id="iaDialog">
- <h2>Instrumental con IA</h2><p class="desc">La app separa la voz del instrumental dentro de tu celular: nada se sube a internet. Se hace una vez por canción y queda guardado en tu biblioteca. Mantené la pantalla encendida y la app abierta mientras trabaja.</p>
+ <h2>Instrumental (sin voz)</h2><p class="desc">Quita las voces ubicadas al centro del estéreo con un análisis por frecuencias. Tarda segundos, no descarga nada y el resultado queda guardado en tu biblioteca. Funciona mejor en canciones estéreo; en grabaciones mono no sirve.</p>
+ <div class="chips" id="iaFuerza"><button data-f="1">Suave</button><button data-f="2">Media</button><button data-f="3">Fuerte</button></div>
  <div id="iaInfo" class="ia-info"></div><progress id="iaBar" max="1" value="0" hidden></progress><div id="iaMsg" class="ia-msg" aria-live="polite"></div><audio id="iaPreview" controls hidden></audio>
  <div class="dialog-actions"><button id="iaTest">Probar 30 s</button><button id="iaFull" class="primary">Crear completo</button></div>
  <div class="dialog-actions"><button id="iaDelete" class="danger" hidden>Eliminar instrumental</button><button id="iaClose">Cerrar</button></div>
@@ -190,7 +191,7 @@ function renderLibrary(){
  for(const {t,i} of filtered){
   const li=document.createElement('li');li.className='track-item'+(i===current?' current':'');
   const pick=document.createElement('button');pick.className='track-pick';pick.innerHTML='<strong></strong><small></small>';
-  pick.querySelector('strong').textContent=t.name;pick.querySelector('small').textContent=(t.artist||'Artista desconocido')+(t.lrc?' · letra cargada':' · sin letra')+(t.inst?' · instrumental IA':'');pick.onclick=()=>{playTrack(i);showTab('lyrics')};
+  pick.querySelector('strong').textContent=t.name;pick.querySelector('small').textContent=(t.artist||'Artista desconocido')+(t.lrc?' · letra cargada':' · sin letra')+(t.inst?' · instrumental':'');pick.onclick=()=>{playTrack(i);showTab('lyrics')};
   const actions=document.createElement('div');actions.className='track-actions';
   const up=document.createElement('button');up.textContent='↑';up.title='Mover hacia arriba';up.disabled=i===0;up.onclick=()=>moveTrack(i,-1);
   const down=document.createElement('button');down.textContent='↓';down.title='Mover hacia abajo';down.disabled=i===tracks.length-1;down.onclick=()=>moveTrack(i,1);
@@ -395,10 +396,10 @@ function setupVoice(){
  sideSum.connect(merger,0,0);sideSum.connect(merger,0,1);merger.connect(sideGain).connect(eqIn);
  dryGain.gain.value=1;sideGain.gain.value=0;
 }
-/* ===== Karaoke: reducción en vivo + Instrumental IA ===== */
+/* ===== Karaoke: reducción en vivo + Instrumental ===== */
 function wantLive(){const t=tracks[current];return voiceOn&&!(t&&t.inst)}
 function applyVoiceGains(){if(!audioCtx)return;const n=audioCtx.currentTime,l=wantLive();dryGain.gain.setTargetAtTime(l?.12:1,n,.04);sideGain.gain.setTargetAtTime(l?1:0,n,.04)}
-function voiceLabel(){const t=tracks[current],b=$('#voice');b.setAttribute('aria-pressed',String(voiceOn));b.textContent=!voiceOn?'○ Quitar voz':(t&&t.inst?'● Karaoke IA':'● Voz quitada')}
+function voiceLabel(){const t=tracks[current],b=$('#voice');b.setAttribute('aria-pressed',String(voiceOn));b.textContent=!voiceOn?'○ Quitar voz':(t&&t.inst?'● Instrumental':'● Voz quitada')}
 function setSource(blob){
  const pos=audio.currentTime,was=!audio.paused;
  if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=URL.createObjectURL(blob);audio.src=objectUrl;
@@ -409,55 +410,50 @@ $('#voice').onclick=async()=>{
  try{setupVoice();await audioCtx.resume()}catch{if(!(t&&t.inst))return toast('Este navegador no permite aplicar el efecto de audio.')}
  voiceOn=!voiceOn;if(t&&t.inst)setSource(voiceOn?t.inst:t.file);
  applyVoiceGains();voiceLabel();
- toast(voiceOn?(t&&t.inst?'Instrumental IA activado.':'Reducción de voz activada. Para mejor calidad, creá el Instrumental IA.'):'Audio original restaurado.');
+ toast(voiceOn?(t&&t.inst?'Instrumental activado.':'Reducción de voz activada. Para mejor calidad, creá el Instrumental.'):'Audio original restaurado.');
 };
 async function saveInst(t){
  if(t.id==null)return;const db=await dbReady;
  await new Promise((ok,no)=>{const tx=db.transaction('tracks','readwrite'),st=tx.objectStore('tracks'),rq=st.get(t.id);rq.onsuccess=()=>{if(rq.result){rq.result.inst=t.inst||null;st.put(rq.result)}};tx.oncomplete=ok;tx.onerror=tx.onabort=()=>no(tx.error||new Error('Sin espacio'))});
 }
-const MODEL_URL='https://huggingface.co/timcsy/demucs-web-onnx/resolve/main/htdemucs_embedded.onnx';
-let iaCtl=null,wake=null;
-const mmss=s=>Number.isFinite(s)?Math.floor(s/60)+':'+String(Math.round(s%60)).padStart(2,'0'):'…';
-function updateIABtn(t){$('#iaOpen').textContent=t&&t.inst?'✦ Instrumental IA ✓':'✦ Instrumental IA'}
-$('#iaOpen').onclick=async()=>{
+/* Limpieza de la prueba anterior con IA (liberan espacio si se habían descargado) */
+try{caches.delete('mk-model-v1');caches.delete('mi-karaoke-cdn-v1')}catch{}
+let iaCtl=null,wl=null,iaFuerza=2;
+try{iaFuerza=+(localStorage.getItem('mk-fuerza')||2)||2}catch{}
+function updateIABtn(t){$('#iaOpen').textContent=t&&t.inst?'✦ Instrumental ✓':'✦ Instrumental'}
+function iaChips(){[...$('#iaFuerza').children].forEach(b=>b.setAttribute('aria-pressed',String(+b.dataset.f===iaFuerza)))}
+$('#iaFuerza').onclick=e=>{const f=+e.target.dataset.f;if(!f)return;iaFuerza=f;try{localStorage.setItem('mk-fuerza',f)}catch{}iaChips()};
+$('#iaOpen').onclick=()=>{
  const t=tracks[current];if(!t)return toast('Primero elegí una canción.');
- $('#iaMsg').textContent='';$('#iaBar').hidden=true;$('#iaPreview').hidden=true;$('#iaDelete').hidden=!t.inst;
- const gpu=await (navigator.gpu?navigator.gpu.requestAdapter().then(a=>!!a).catch(()=>false):false);
- const model=await caches.open('mk-model-v1').then(c=>c.match(MODEL_URL)).then(r=>!!r).catch(()=>false);
- const info=$('#iaInfo');info.replaceChildren();
- ['Canción: '+t.name,t.inst?`Instrumental guardado (${(t.inst.size/1048576).toFixed(1)} MB). Podés rehacerlo.`:'Todavía no tiene instrumental.',
-  model?'Modelo de IA: listo en tu celular ✓':'Modelo de IA: se descarga la primera vez (≈ 200 MB en total). Conviene usar Wi‑Fi.',
-  gpu?'Aceleración por GPU (WebGPU): disponible ✓':'Aceleración por GPU: no disponible. Puede ser muy lento.'
- ].forEach(x=>{const d=document.createElement('div');d.textContent=x;info.append(d)});
+ $('#iaMsg').textContent='';$('#iaPreview').hidden=true;$('#iaBar').hidden=true;$('#iaDelete').hidden=!t.inst;iaChips();
+ $('#iaInfo').textContent=t.inst?`Instrumental guardado (${(t.inst.size/1048576).toFixed(1)} MB). Podés rehacerlo con otra intensidad.`:'Todavía no tiene instrumental. Probá primero con 30 s.';
  $('#iaDialog').showModal();
 };
 function iaBusy(b){$('#iaTest').disabled=$('#iaFull').disabled=b;$('#iaClose').textContent=b?'Cancelar':'Cerrar'}
 async function iaRun(prueba){
  const t=tracks[current];if(!t||iaCtl)return;
  iaCtl=new AbortController();iaBusy(true);$('#iaPreview').hidden=true;
- try{wake=await navigator.wakeLock.request('screen')}catch{wake=null}
+ try{wl=await navigator.wakeLock.request('screen')}catch{wl=null}
  const msg=$('#iaMsg'),bar=$('#iaBar');bar.hidden=false;bar.value=0;
  try{
   const {crearInstrumental}=await import('./separator.js');
-  const r=await crearInstrumental(t.file,{prueba,signal:iaCtl.signal,onEstado:e=>{
-   if(e.fase==='descarga'){bar.value=e.frac;msg.textContent=`Descargando el modelo… ${e.mb.toFixed(0)} de ${e.totalMb.toFixed(0)} MB`}
-   else if(e.fase==='separando'){bar.value=e.frac;msg.textContent=`Separando la voz… ${Math.round(e.frac*100)} % · faltan ≈ ${mmss(e.eta)}`}
-   else{bar.removeAttribute('value');msg.textContent={motor:'Cargando el motor de IA…',cargando:'Preparando el modelo…',decodificando:'Leyendo la canción…',comprimiendo:'Guardando el instrumental…'}[e.fase]||''}
+  const r=await crearInstrumental(t.file,{prueba,fuerza:iaFuerza,signal:iaCtl.signal,onEstado:e=>{
+   if(e.fase==='procesando'){bar.value=e.frac;msg.textContent=`Quitando la voz… ${Math.round(e.frac*100)} %`}
+   else{bar.removeAttribute('value');msg.textContent={decodificando:'Leyendo la canción…',comprimiendo:'Guardando el instrumental…'}[e.fase]||''}
   }});
+  if(r.mono){msg.textContent='Esta canción es casi mono: la voz y los instrumentos suenan igual en los dos lados y este método no puede separarlos. No se guardó nada.';return}
   if(prueba){
-   const x=r.segundos/r.separacion,dur=audio.duration;
-   msg.textContent=`Prueba lista: ${Math.round(r.segundos)} s de audio en ${r.separacion.toFixed(1)} s (${x.toFixed(2)}× tiempo real, ${r.gpu?'con GPU':'sin GPU'}).`+(Number.isFinite(dur)&&dur>0?` La canción completa tardaría ≈ ${mmss(dur/x)}.`:'')+' Escuchá el resultado abajo.';
+   msg.textContent=`Prueba lista en ${r.separacion.toFixed(1)} s. Escuchá el resultado abajo: si queda voz, subí la intensidad; si suena hueco, bajala.`;
    const pv=$('#iaPreview');pv.src=URL.createObjectURL(r.blob);pv.hidden=false;
   }else{
    t.inst=r.blob;
    try{await saveInst(t)}catch{toast('No se pudo guardar en el dispositivo; queda solo hasta cerrar la app.')}
-   msg.textContent=`¡Listo! Instrumental guardado (${(r.blob.size/1048576).toFixed(1)} MB).`;
-   $('#iaDelete').hidden=false;renderLibrary();updateIABtn(t);
+   msg.textContent=`¡Listo! Instrumental guardado (${(r.blob.size/1048576).toFixed(1)} MB) y activado.`;
+   $('#iaDelete').hidden=false;renderLibrary();updateIABtn(t);$('#iaInfo').textContent='Instrumental guardado ('+(t.inst.size/1048576).toFixed(1)+' MB).';
    if(tracks[current]===t){voiceOn=true;setSource(t.inst);applyVoiceGains();voiceLabel()}
-   toast('Instrumental IA listo y activado.');
   }
  }catch(e){msg.textContent=e&&e.name==='AbortError'?'Cancelado.':'Error: '+(e&&e.message||e)}
- finally{iaCtl=null;iaBusy(false);bar.hidden=true;try{wake&&wake.release()}catch{}}
+ finally{iaCtl=null;iaBusy(false);bar.hidden=true;try{wl&&wl.release()}catch{}}
 }
 $('#iaTest').onclick=()=>iaRun(true);$('#iaFull').onclick=()=>iaRun(false);
 $('#iaClose').onclick=()=>{if(iaCtl)iaCtl.abort();else $('#iaDialog').close()};

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mi-karaoke-shell-v7';
+const CACHE_NAME = 'mi-karaoke-shell-v8';
 const APP_SHELL = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './separator.js', './lame.js'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL)).then(() => self.skipWaiting()));
@@ -11,10 +11,6 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   const request = event.request;
   const url = new URL(request.url);
-  if (request.method === 'GET' && url.hostname === 'cdn.jsdelivr.net') {
-    event.respondWith(caches.open('mi-karaoke-cdn-v1').then(async c => { const hit = await c.match(request); if (hit) return hit; const r = await fetch(request); if (r.ok) c.put(request, r.clone()); return r; }));
-    return;
-  }
   if (request.method !== 'GET' || url.origin !== self.location.origin) return;
   if (request.mode === 'navigate') {
     event.respondWith(fetch(request).then(response => {
