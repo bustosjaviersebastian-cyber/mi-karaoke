@@ -325,6 +325,7 @@ $('#syncLyrics').onclick=()=>{
  if(current<0)return toast('Primero elegí una canción.');
  const parsed=parseLRC(tracks[current].lrc||'');
  if(!parsed.length)return toast('Primero pegá una letra.');
+ // Se reinicia toda la marcación: evita abrir el sincronizador al final de una letra ya marcada.
  syncLines=parsed.map(x=>({time:null,text:x.text}));syncIndex=0;
  audio.pause();try{audio.currentTime=0}catch{}
  $('#syncPlay').textContent='▶ Iniciar reproducción';renderSync();$('#syncDialog').showModal();
@@ -349,11 +350,9 @@ $('#finishSync').onclick=()=>{
 $('#syncDialog').addEventListener('close',()=>{if(audio.paused)$('#syncPlay').textContent='▶ Iniciar reproducción'});
 audio.addEventListener('playing',()=>{if($('#syncDialog').open){$('#syncPlay').textContent='Ⅱ Pausar';renderSync()}});
 audio.addEventListener('pause',()=>{if($('#syncDialog').open){$('#syncPlay').textContent='▶ Continuar reproducción';renderSync()}});
-
 /* Pestañas */
 function showTab(n){['lyrics','lib','eq'].forEach(k=>{$('#tab-'+k).hidden=k!==n;$('#t-'+k).setAttribute('aria-selected',String(k===n))})}
 ['lyrics','lib','eq'].forEach(k=>$('#t-'+k).onclick=()=>showTab(k));
-
 /* Ecualizador de 5 bandas */
 const EQ_F=[60,230,910,3600,14000],EQ_L=['60 Hz','230 Hz','910 Hz','3,6 kHz','14 kHz'];
 const EQ_P={'Plano':[0,0,0,0,0],'Graves +':[6,4,0,-1,0],'Agudos +':[-1,0,0,3,6],'Rock':[4,2,-2,3,4],'Voz clara':[-2,-1,3,4,1],'Karaoke':[2,0,-4,-3,1]};
@@ -377,11 +376,9 @@ function eqRender(){
 }
 $('#eqOn').onchange=e=>{eqEnabled=e.target.checked;eqApply()};
 eqRender();
-
 /* El audio puede quedar en pausa hasta un toque del usuario */
-const userTouchWake=()=>{if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume()};
-audio.addEventListener('play',userTouchWake);document.addEventListener('pointerdown',userTouchWake,{passive:true});
-
+const wake=()=>{if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume()};
+audio.addEventListener('play',wake);document.addEventListener('pointerdown',wake,{passive:true});
 /* Efecto vocal: cancelación central L-R con control de intensidad. No es separación por IA. */
 function setupVoice(){
  if(audioCtx)return;
@@ -398,7 +395,6 @@ function setupVoice(){
  sideSum.connect(merger,0,0);sideSum.connect(merger,0,1);merger.connect(sideGain).connect(eqIn);
  dryGain.gain.value=1;sideGain.gain.value=0;
 }
-
 /* ===== Karaoke: reducción en vivo + Instrumental IA ===== */
 function wantLive(){const t=tracks[current];return voiceOn&&!(t&&t.inst)}
 function applyVoiceGains(){if(!audioCtx)return;const n=audioCtx.currentTime,l=wantLive();dryGain.gain.setTargetAtTime(l?.12:1,n,.04);sideGain.gain.setTargetAtTime(l?1:0,n,.04)}
@@ -420,7 +416,7 @@ async function saveInst(t){
  await new Promise((ok,no)=>{const tx=db.transaction('tracks','readwrite'),st=tx.objectStore('tracks'),rq=st.get(t.id);rq.onsuccess=()=>{if(rq.result){rq.result.inst=t.inst||null;st.put(rq.result)}};tx.oncomplete=ok;tx.onerror=tx.onabort=()=>no(tx.error||new Error('Sin espacio'))});
 }
 const MODEL_URL='https://huggingface.co/timcsy/demucs-web-onnx/resolve/main/htdemucs_embedded.onnx';
-let iaCtl=null,screenWakeLock=null;
+let iaCtl=null,wake=null;
 const mmss=s=>Number.isFinite(s)?Math.floor(s/60)+':'+String(Math.round(s%60)).padStart(2,'0'):'…';
 function updateIABtn(t){$('#iaOpen').textContent=t&&t.inst?'✦ Instrumental IA ✓':'✦ Instrumental IA'}
 $('#iaOpen').onclick=async()=>{
@@ -439,7 +435,7 @@ function iaBusy(b){$('#iaTest').disabled=$('#iaFull').disabled=b;$('#iaClose').t
 async function iaRun(prueba){
  const t=tracks[current];if(!t||iaCtl)return;
  iaCtl=new AbortController();iaBusy(true);$('#iaPreview').hidden=true;
- try{screenWakeLock=await navigator.wakeLock.request('screen')}catch{screenWakeLock=null}
+ try{wake=await navigator.wakeLock.request('screen')}catch{wake=null}
  const msg=$('#iaMsg'),bar=$('#iaBar');bar.hidden=false;bar.value=0;
  try{
   const {crearInstrumental}=await import('./separator.js');
@@ -461,7 +457,7 @@ async function iaRun(prueba){
    toast('Instrumental IA listo y activado.');
   }
  }catch(e){msg.textContent=e&&e.name==='AbortError'?'Cancelado.':'Error: '+(e&&e.message||e)}
- finally{iaCtl=null;iaBusy(false);bar.hidden=true;try{screenWakeLock&&screenWakeLock.release()}catch{}}
+ finally{iaCtl=null;iaBusy(false);bar.hidden=true;try{wake&&wake.release()}catch{}}
 }
 $('#iaTest').onclick=()=>iaRun(true);$('#iaFull').onclick=()=>iaRun(false);
 $('#iaClose').onclick=()=>{if(iaCtl)iaCtl.abort();else $('#iaDialog').close()};
@@ -477,35 +473,13 @@ if('mediaSession'in navigator){
  Object.entries(handlers).forEach(([k,v])=>{try{navigator.mediaSession.setActionHandler(k,v)}catch{}})
 }
 if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
-
-/* Inicialización ultra segura protegida contra fallos de datos guardados */
 (async()=>{
  try{
-  const rows = await dbAction('readonly', s => s.getAll()).catch(() => []);
-  if (Array.isArray(rows)) {
-    rows.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-    for(const r of rows){
-      if(!r || !r.name || !r.file) continue;
-      let lrc = r.lrc; 
-      if(!lrc) {
-        try { lrc = localStorage.getItem('mk-lyric:' + normalize(r.name)); } catch {}
-      }
-      tracks.push({
-        id: r.id, 
-        name: r.name, 
-        artist: r.artist || '', 
-        file: r.file, 
-        lrc: lrc || null, 
-        inst: r.inst || null
-      });
-    }
-  }
-  renderLibrary();
-  updateCount();
- }catch(e){
-  console.error("Error al iniciar la base de datos:", e);
-  toast('No se pudo cargar la biblioteca. Probá agregando canciones nuevamente.');
- }
+  const rows=await dbAction('readonly',s=>s.getAll());
+  rows.sort((a,b)=>(a.order??0)-(b.order??0));
+  for(const r of rows){let lrc=r.lrc; if(!lrc)try{lrc=localStorage.getItem('mk-lyric:'+normalize(r.name))}catch{};tracks.push({id:r.id,name:r.name,artist:r.artist||'',file:r.file,lrc:lrc||null,inst:r.inst||null})}
+  renderLibrary();updateCount();
+ }catch(e){toast('No se pudo abrir la biblioteca guardada.')}
  try{if(navigator.storage?.persist)await navigator.storage.persist()}catch{}
 })();
 </script>
