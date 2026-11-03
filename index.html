@@ -79,6 +79,9 @@ html,body{height:100%}body{height:100dvh;overflow:hidden}
 .pane #lyrics .lyric-empty p{font-size:.95rem;font-weight:450;color:var(--muted);margin:8px 0 16px;transform:none}
 .player .controls{grid-template-columns:1.7fr .9fr 1.1fr .9fr}
 #voice{white-space:nowrap;font-size:.82rem!important}
+#iaOpen{grid-column:1/-1;background:#8de0c11a;border-color:#8de0c155;color:var(--accent2)}
+.ia-info{font-size:.85rem;color:var(--muted);display:grid;gap:3px;margin-bottom:10px}
+#iaBar{width:100%;height:10px;accent-color:var(--accent)}.ia-msg{min-height:44px;margin:8px 0;font-size:.9rem}#iaPreview{width:100%;margin:6px 0}
 </style>
 </head>
 <body>
@@ -99,6 +102,7 @@ html,body{height:100%}body{height:100dvh;overflow:hidden}
    <div class="ltools">
     <button id="searchLyrics">Buscar</button><button id="editLyrics">Editar</button><button id="syncLyrics">Sincronizar</button>
     <button id="offsetPlus" class="quiet" title="Adelantar la letra 0,5 s">Letra antes</button><button id="offsetReset" class="quiet">Reiniciar</button><button id="offsetMinus" class="quiet" title="Retrasar la letra 0,5 s">Letra después</button>
+    <button id="iaOpen">✦ Instrumental IA</button>
    </div>
   </section>
   <section id="tab-lib" class="pane" hidden>
@@ -141,6 +145,12 @@ html,body{height:100%}body{height:100dvh;overflow:hidden}
  <div class="dialog-actions"><button id="markLine" class="primary" disabled>Marcar línea ●</button><button id="undoMark">Deshacer marca</button><button id="finishSync">Guardar sincronización</button></div>
  <div id="syncPreview" class="sync-list"></div>
 </dialog>
+<dialog id="iaDialog">
+ <h2>Instrumental con IA</h2><p class="desc">La app separa la voz del instrumental dentro de tu celular: nada se sube a internet. Se hace una vez por canción y queda guardado en tu biblioteca. Mantené la pantalla encendida y la app abierta mientras trabaja.</p>
+ <div id="iaInfo" class="ia-info"></div><progress id="iaBar" max="1" value="0" hidden></progress><div id="iaMsg" class="ia-msg" aria-live="polite"></div><audio id="iaPreview" controls hidden></audio>
+ <div class="dialog-actions"><button id="iaTest">Probar 30 s</button><button id="iaFull" class="primary">Crear completo</button></div>
+ <div class="dialog-actions"><button id="iaDelete" class="danger" hidden>Eliminar instrumental</button><button id="iaClose">Cerrar</button></div>
+</dialog>
 <div id="toast" hidden></div>
 <script>
 'use strict';
@@ -180,7 +190,7 @@ function renderLibrary(){
  for(const {t,i} of filtered){
   const li=document.createElement('li');li.className='track-item'+(i===current?' current':'');
   const pick=document.createElement('button');pick.className='track-pick';pick.innerHTML='<strong></strong><small></small>';
-  pick.querySelector('strong').textContent=t.name;pick.querySelector('small').textContent=(t.artist||'Artista desconocido')+(t.lrc?' · letra cargada':' · sin letra');pick.onclick=()=>{playTrack(i);showTab('lyrics')};
+  pick.querySelector('strong').textContent=t.name;pick.querySelector('small').textContent=(t.artist||'Artista desconocido')+(t.lrc?' · letra cargada':' · sin letra')+(t.inst?' · instrumental IA':'');pick.onclick=()=>{playTrack(i);showTab('lyrics')};
   const actions=document.createElement('div');actions.className='track-actions';
   const up=document.createElement('button');up.textContent='↑';up.title='Mover hacia arriba';up.disabled=i===0;up.onclick=()=>moveTrack(i,-1);
   const down=document.createElement('button');down.textContent='↓';down.title='Mover hacia abajo';down.disabled=i===tracks.length-1;down.onclick=()=>moveTrack(i,1);
@@ -217,11 +227,11 @@ async function addFiles(files){
  if(current<0&&tracks.length)playTrack(0);
  toast(added?`${added} canción(es) agregada(s).`:'No se agregaron canciones nuevas.');
 }
-function setTrackHeader(t){$('#trackTitle').textContent=t?.name||'Elegí una canción';$('#trackArtist').textContent=t?(t.artist||'Artista no identificado'):'Tu biblioteca está en este dispositivo'}
+function setTrackHeader(t){updateIABtn(t);$('#trackTitle').textContent=t?.name||'Elegí una canción';$('#trackArtist').textContent=t?(t.artist||'Artista no identificado'):'Tu biblioteca está en este dispositivo'}
 async function playTrack(i){
  if(i<0||i>=tracks.length)return;current=i;const t=tracks[i];try{setupVoice();audioCtx.resume()}catch{}
- if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=URL.createObjectURL(t.file);audio.src=objectUrl;
- setTrackHeader(t);showLyrics(t.lrc);renderLibrary();
+ if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=URL.createObjectURL(voiceOn&&t.inst?t.inst:t.file);audio.src=objectUrl;
+ setTrackHeader(t);showLyrics(t.lrc);renderLibrary();applyVoiceGains();voiceLabel();
  try{await audio.play()}catch{toast('Tocá Reproducir para iniciar el audio.')}
  if(!t.lrc&&navigator.onLine)searchLyrics(true);
  if('mediaSession'in navigator&&'MediaMetadata'in window)navigator.mediaSession.metadata=new MediaMetadata({title:t.name,artist:t.artist||'Mi Karaoke',album:'Mi Karaoke'});
@@ -385,13 +395,79 @@ function setupVoice(){
  sideSum.connect(merger,0,0);sideSum.connect(merger,0,1);merger.connect(sideGain).connect(eqIn);
  dryGain.gain.value=1;sideGain.gain.value=0;
 }
+/* ===== Karaoke: reducción en vivo + Instrumental IA ===== */
+function wantLive(){const t=tracks[current];return voiceOn&&!(t&&t.inst)}
+function applyVoiceGains(){if(!audioCtx)return;const n=audioCtx.currentTime,l=wantLive();dryGain.gain.setTargetAtTime(l?.12:1,n,.04);sideGain.gain.setTargetAtTime(l?1:0,n,.04)}
+function voiceLabel(){const t=tracks[current],b=$('#voice');b.setAttribute('aria-pressed',String(voiceOn));b.textContent=!voiceOn?'○ Quitar voz':(t&&t.inst?'● Karaoke IA':'● Voz quitada')}
+function setSource(blob){
+ const pos=audio.currentTime,was=!audio.paused;
+ if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=URL.createObjectURL(blob);audio.src=objectUrl;
+ audio.addEventListener('loadedmetadata',()=>{try{audio.currentTime=pos}catch{}if(was)audio.play().catch(()=>{})},{once:true});
+}
 $('#voice').onclick=async()=>{
- try{setupVoice();await audioCtx.resume();voiceOn=!voiceOn;
-  const now=audioCtx.currentTime;dryGain.gain.setTargetAtTime(voiceOn?.12:1,now,.04);sideGain.gain.setTargetAtTime(voiceOn?1:0,now,.04);
-  $('#voice').setAttribute('aria-pressed',String(voiceOn));$('#voice').textContent=voiceOn?'● Voz quitada':'○ Quitar voz';
-  toast(voiceOn?'Efecto de reducción vocal activado.':'Audio original restaurado.')
- }catch{toast('Este navegador no permite aplicar el efecto de audio.')}
+ const t=tracks[current];
+ try{setupVoice();await audioCtx.resume()}catch{if(!(t&&t.inst))return toast('Este navegador no permite aplicar el efecto de audio.')}
+ voiceOn=!voiceOn;if(t&&t.inst)setSource(voiceOn?t.inst:t.file);
+ applyVoiceGains();voiceLabel();
+ toast(voiceOn?(t&&t.inst?'Instrumental IA activado.':'Reducción de voz activada. Para mejor calidad, creá el Instrumental IA.'):'Audio original restaurado.');
 };
+async function saveInst(t){
+ if(t.id==null)return;const db=await dbReady;
+ await new Promise((ok,no)=>{const tx=db.transaction('tracks','readwrite'),st=tx.objectStore('tracks'),rq=st.get(t.id);rq.onsuccess=()=>{if(rq.result){rq.result.inst=t.inst||null;st.put(rq.result)}};tx.oncomplete=ok;tx.onerror=tx.onabort=()=>no(tx.error||new Error('Sin espacio'))});
+}
+const MODEL_URL='https://huggingface.co/timcsy/demucs-web-onnx/resolve/main/htdemucs_embedded.onnx';
+let iaCtl=null,wake=null;
+const mmss=s=>Number.isFinite(s)?Math.floor(s/60)+':'+String(Math.round(s%60)).padStart(2,'0'):'…';
+function updateIABtn(t){$('#iaOpen').textContent=t&&t.inst?'✦ Instrumental IA ✓':'✦ Instrumental IA'}
+$('#iaOpen').onclick=async()=>{
+ const t=tracks[current];if(!t)return toast('Primero elegí una canción.');
+ $('#iaMsg').textContent='';$('#iaBar').hidden=true;$('#iaPreview').hidden=true;$('#iaDelete').hidden=!t.inst;
+ const gpu=await (navigator.gpu?navigator.gpu.requestAdapter().then(a=>!!a).catch(()=>false):false);
+ const model=await caches.open('mk-model-v1').then(c=>c.match(MODEL_URL)).then(r=>!!r).catch(()=>false);
+ const info=$('#iaInfo');info.replaceChildren();
+ ['Canción: '+t.name,t.inst?`Instrumental guardado (${(t.inst.size/1048576).toFixed(1)} MB). Podés rehacerlo.`:'Todavía no tiene instrumental.',
+  model?'Modelo de IA: listo en tu celular ✓':'Modelo de IA: se descarga la primera vez (≈ 200 MB en total). Conviene usar Wi‑Fi.',
+  gpu?'Aceleración por GPU (WebGPU): disponible ✓':'Aceleración por GPU: no disponible. Puede ser muy lento.'
+ ].forEach(x=>{const d=document.createElement('div');d.textContent=x;info.append(d)});
+ $('#iaDialog').showModal();
+};
+function iaBusy(b){$('#iaTest').disabled=$('#iaFull').disabled=b;$('#iaClose').textContent=b?'Cancelar':'Cerrar'}
+async function iaRun(prueba){
+ const t=tracks[current];if(!t||iaCtl)return;
+ iaCtl=new AbortController();iaBusy(true);$('#iaPreview').hidden=true;
+ try{wake=await navigator.wakeLock.request('screen')}catch{wake=null}
+ const msg=$('#iaMsg'),bar=$('#iaBar');bar.hidden=false;bar.value=0;
+ try{
+  const {crearInstrumental}=await import('./separator.js');
+  const r=await crearInstrumental(t.file,{prueba,signal:iaCtl.signal,onEstado:e=>{
+   if(e.fase==='descarga'){bar.value=e.frac;msg.textContent=`Descargando el modelo… ${e.mb.toFixed(0)} de ${e.totalMb.toFixed(0)} MB`}
+   else if(e.fase==='separando'){bar.value=e.frac;msg.textContent=`Separando la voz… ${Math.round(e.frac*100)} % · faltan ≈ ${mmss(e.eta)}`}
+   else{bar.removeAttribute('value');msg.textContent={motor:'Cargando el motor de IA…',cargando:'Preparando el modelo…',decodificando:'Leyendo la canción…',comprimiendo:'Guardando el instrumental…'}[e.fase]||''}
+  }});
+  if(prueba){
+   const x=r.segundos/r.separacion,dur=audio.duration;
+   msg.textContent=`Prueba lista: ${Math.round(r.segundos)} s de audio en ${r.separacion.toFixed(1)} s (${x.toFixed(2)}× tiempo real, ${r.gpu?'con GPU':'sin GPU'}).`+(Number.isFinite(dur)&&dur>0?` La canción completa tardaría ≈ ${mmss(dur/x)}.`:'')+' Escuchá el resultado abajo.';
+   const pv=$('#iaPreview');pv.src=URL.createObjectURL(r.blob);pv.hidden=false;
+  }else{
+   t.inst=r.blob;
+   try{await saveInst(t)}catch{toast('No se pudo guardar en el dispositivo; queda solo hasta cerrar la app.')}
+   msg.textContent=`¡Listo! Instrumental guardado (${(r.blob.size/1048576).toFixed(1)} MB).`;
+   $('#iaDelete').hidden=false;renderLibrary();updateIABtn(t);
+   if(tracks[current]===t){voiceOn=true;setSource(t.inst);applyVoiceGains();voiceLabel()}
+   toast('Instrumental IA listo y activado.');
+  }
+ }catch(e){msg.textContent=e&&e.name==='AbortError'?'Cancelado.':'Error: '+(e&&e.message||e)}
+ finally{iaCtl=null;iaBusy(false);bar.hidden=true;try{wake&&wake.release()}catch{}}
+}
+$('#iaTest').onclick=()=>iaRun(true);$('#iaFull').onclick=()=>iaRun(false);
+$('#iaClose').onclick=()=>{if(iaCtl)iaCtl.abort();else $('#iaDialog').close()};
+$('#iaDialog').addEventListener('close',()=>{if(iaCtl)iaCtl.abort()});
+$('#iaDelete').onclick=async()=>{
+ const t=tracks[current];if(!t||!t.inst||!confirm('¿Eliminar el instrumental de esta canción?'))return;
+ t.inst=null;try{await saveInst(t)}catch{}
+ if(voiceOn)setSource(t.file);applyVoiceGains();voiceLabel();updateIABtn(t);renderLibrary();$('#iaDialog').close();
+};
+
 if('mediaSession'in navigator){
  const handlers={play:()=>audio.play(),pause:()=>audio.pause(),previoustrack:previousTrack,nexttrack:nextTrack,seekto:d=>{if(Number.isFinite(d.seekTime))audio.currentTime=d.seekTime}};
  Object.entries(handlers).forEach(([k,v])=>{try{navigator.mediaSession.setActionHandler(k,v)}catch{}})
@@ -401,7 +477,7 @@ if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serv
  try{
   const rows=await dbAction('readonly',s=>s.getAll());
   rows.sort((a,b)=>(a.order??0)-(b.order??0));
-  for(const r of rows){let lrc=r.lrc; if(!lrc)try{lrc=localStorage.getItem('mk-lyric:'+normalize(r.name))}catch{};tracks.push({id:r.id,name:r.name,artist:r.artist||'',file:r.file,lrc:lrc||null})}
+  for(const r of rows){let lrc=r.lrc; if(!lrc)try{lrc=localStorage.getItem('mk-lyric:'+normalize(r.name))}catch{};tracks.push({id:r.id,name:r.name,artist:r.artist||'',file:r.file,lrc:lrc||null,inst:r.inst||null})}
   renderLibrary();updateCount();
  }catch(e){toast('No se pudo abrir la biblioteca guardada.')}
  try{if(navigator.storage?.persist)await navigator.storage.persist()}catch{}

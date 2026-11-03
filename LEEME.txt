@@ -1,0 +1,38 @@
+MI KARAOKE — VERSIÓN MEJORADA
+
+CONTENIDO
+- index.html: aplicación.
+- manifest.json: configuración PWA.
+- sw.js: caché y funcionamiento sin conexión del shell de la aplicación.
+- icon-192.png / icon-512.png: iconos.
+
+CAMBIOS PRINCIPALES
+1. Interfaz renovada, adaptable a teléfono y computadora.
+2. Biblioteca visible con filtro, orden de reproducción y botones para mover canciones arriba/abajo.
+3. Se mantiene la biblioteca local en IndexedDB y se intenta migrar la biblioteca de la versión anterior (base de datos "karaoke", almacén "t").
+4. Búsqueda de letras con título e intérprete y selección manual del resultado para evitar elegir automáticamente una versión equivocada.
+5. Pegado y edición de letras; sincronización manual línea por línea usando el tiempo real del reproductor.
+6. Lectura de archivos LRC con marcas de tiempo y ajuste fino de sincronización.
+7. Efecto de reducción vocal basado en cancelación del canal central, sin el filtro extremo anterior.
+8. Service worker con caché versionada y actualización del documento principal.
+
+USO
+- Extraé todos los archivos juntos en la misma carpeta del alojamiento web.
+- Abrí la aplicación desde su dirección HTTPS para instalarla como PWA.
+- Agregá archivos de audio desde el teléfono. Para cargar una letra automáticamente, seleccioná también el archivo .lrc o .txt con el mismo nombre base.
+- Para letras sin tiempos, usá «Sincronizar letra»: reproducí el tema y tocá «Marcar línea» al comienzo de cada frase.
+
+NOTAS IMPORTANTES
+- La biblioteca se guarda en el almacenamiento del navegador/dispositivo. No borres los datos del sitio si querés conservarla.
+- La búsqueda online requiere conexión y utiliza LRCLIB. No todas las canciones o versiones están disponibles.
+- La reducción vocal no es separación por inteligencia artificial: funciona mejor con voces mezcladas al centro en una pista estéreo. Puede reducir también instrumentos centrados y no eliminar por completo la voz. La calidad depende de la mezcla original.
+- Los archivos de música siguen siendo locales; no se suben a un servidor.
+
+
+--- VERSIÓN 3: INSTRUMENTAL CON IA ---
+- Botón «✦ Instrumental IA» (pestaña Letra): separa la voz del instrumental dentro del dispositivo con el modelo HTDemucs.
+- «Probar 30 s» mide la velocidad en tu celular y deja escuchar el resultado. «Crear completo» guarda el instrumental (MP3) en la biblioteca.
+- Con instrumental guardado, el botón «Karaoke» alterna Original ⇄ Instrumental IA. Sin instrumental usa el filtro en vivo.
+- Primera vez: se descargan ≈172 MB (modelo, Hugging Face) y ≈28 MB (motor ONNX Runtime Web, jsDelivr). Quedan guardados en el dispositivo.
+- Archivos nuevos: separator.js (incluye demucs-web, MIT) y lame.js (lamejs, LGPL-3.0, se mantiene como archivo separado).
+- Más rápido con WebGPU (Chrome reciente). Sin GPU puede tardar muchísimo.
