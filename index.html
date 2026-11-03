@@ -48,38 +48,77 @@ textarea{min-height:220px;resize:vertical;line-height:1.5}.field{margin:5px 0 10
 @media(max-width:780px){main{grid-template-columns:1fr;padding:8px 12px 20px;gap:12px}header{padding:13px 14px 8px}.stage{min-height:560px}.side{display:grid;grid-template-columns:1fr}.side-card{padding:14px}#queue{max-height:260px}}
 @media(min-width:781px){.stage{position:sticky;top:12px;height:calc(100dvh - 36px);min-height:620px}.side-card{max-height:calc(100dvh - 36px)}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+
+/* ===== Diseño de una sola pantalla ===== */
+html,body{height:100%}body{height:100dvh;overflow:hidden}
+.app{display:flex;flex-direction:column;height:100%;max-width:720px;margin:0 auto}
+.top{display:flex;align-items:center;gap:10px;padding:10px 14px 6px}.top .logo{width:36px;height:36px;font-size:19px;border-radius:12px;flex:none}
+.np{flex:1;min-width:0}.np .track-title{font-size:1.02rem;margin:0}.np .track-artist{font-size:.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:2px 12px 8px}
+.tabs button{min-height:38px;padding:5px;font-size:.86rem;background:transparent}
+.tabs button[aria-selected=true]{background:var(--accent);color:#101b19;border-color:var(--accent)}
+.tabs .count{opacity:.75;font-weight:500}
+.views{flex:1;min-height:0;margin:0 12px;background:#171d29ee;border:1px solid var(--line);border-radius:18px;display:flex;flex-direction:column;overflow:hidden}
+.pane{flex:1;min-height:0;display:flex;flex-direction:column;padding:8px 10px 10px}
+.pane #lyrics{flex:1;min-height:0;max-height:none;padding:26vh 12px}
+.pane #lyrics p{font-size:clamp(1.1rem,5vw,1.5rem);margin:14px 0}
+.ltools{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding-top:8px}
+.ltools button{min-height:36px;padding:6px 4px;font-size:.8rem}.ltools .quiet{color:var(--muted)}
+.pane #queue{flex:1;max-height:none;min-height:0}.pane #trackSearch{flex:none}
+.player{padding:8px 14px 10px;border-top:0}.player .seek{margin:2px 0}
+.player .controls{display:grid;grid-template-columns:1.25fr 1fr 1fr 1fr;gap:8px;margin:6px 0 0}
+.player .controls .play{width:auto;height:48px}.player .controls button{min-width:0;padding:8px 6px;font-size:.9rem}
+#voice[aria-pressed=true]{border-color:var(--pink);color:var(--pink);background:#f58bb51a}
+.eq-head{display:flex;align-items:center;gap:10px;font-weight:650}.eq-head input{width:20px;height:20px;accent-color:var(--accent)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 6px}.chips button{min-height:34px;padding:5px 11px;font-size:.82rem}
+.chips button[aria-pressed=true]{background:var(--accent);color:#101b19;border-color:var(--accent)}
+#eqBands{flex:1;overflow:auto}.band{display:grid;grid-template-columns:58px 1fr 48px;align-items:center;gap:8px;padding:9px 0}
+.band output{text-align:right;color:var(--muted);font-size:.8rem;font-variant-numeric:tabular-nums}.eq-note{color:var(--muted);font-size:.78rem;margin:6px 0 0}
+
+.pane #lyrics:has(>.lyric-empty){padding:16px 12px;display:grid;align-content:center;mask-image:none;-webkit-mask-image:none}
+.pane #lyrics .lyric-empty p{font-size:.95rem;font-weight:450;color:var(--muted);margin:8px 0 16px;transform:none}
+.player .controls{grid-template-columns:1.7fr .9fr 1.1fr .9fr}
+#voice{white-space:nowrap;font-size:.82rem!important}
 </style>
 </head>
 <body>
-<header>
- <div class="brand"><div class="logo">♫</div><div><strong>Mi Karaoke</strong><small>Tu música, tus letras, tu escenario</small></div></div>
- <button id="addTop" class="primary">＋ Agregar</button>
-</header>
-<main>
- <section class="stage">
-  <div class="track-head"><div class="eyebrow">Reproduciendo ahora</div><div id="trackTitle" class="track-title">Elegí una canción</div><div id="trackArtist" class="track-artist">Tu biblioteca está en este dispositivo</div></div>
-  <div id="lyrics" aria-live="off"><div class="lyric-empty"><div class="note">♫</div><strong>Prepará tu karaoke</strong><p>Agregá canciones desde tu teléfono. Podés cargar letras sincronizadas o marcar los tiempos mientras cantás.</p><button class="primary" id="addEmpty">Agregar canciones</button></div></div>
-  <div class="player">
-   <input class="seek" id="seek" type="range" min="0" max="1" step=".1" value="0" aria-label="Posición de reproducción">
-   <div class="time-row"><span id="elapsed">0:00</span><span id="duration">0:00</span></div>
-   <div class="controls"><button id="previous" aria-label="Anterior">|◀</button><button id="play" class="primary play" aria-label="Reproducir">▶</button><button id="next" aria-label="Siguiente">▶|</button></div>
-   <div class="tools"><button id="voice" aria-pressed="false">◉ Quitar voz</button><button id="searchLyrics">Buscar letra</button><button id="editLyrics">Pegar / editar letra</button><button id="syncLyrics">Sincronizar letra</button><button id="offsetPlus" class="small">Adelantar letra 0,5 s</button><button id="offsetMinus" class="small">Retrasar letra 0,5 s</button><button id="offsetReset" class="small">Restablecer letra</button></div>
-  </div>
- </section>
- <aside class="side">
-  <section class="side-card">
-   <div class="side-head"><h2>Mi biblioteca</h2><span id="trackCount" class="count">0 canciones</span></div>
+<div class="app">
+ <div class="top">
+  <div class="logo">♫</div>
+  <div class="np"><div id="trackTitle" class="track-title">Elegí una canción</div><div id="trackArtist" class="track-artist">Tu biblioteca está en este dispositivo</div></div>
+  <button id="addTop" class="primary small">＋ Agregar</button>
+ </div>
+ <nav class="tabs" role="tablist" aria-label="Secciones">
+  <button id="t-lyrics" role="tab" aria-selected="true">Letra</button>
+  <button id="t-lib" role="tab" aria-selected="false">Canciones <span id="trackCount" class="count">0</span></button>
+  <button id="t-eq" role="tab" aria-selected="false">Ecualizador</button>
+ </nav>
+ <div class="views">
+  <section id="tab-lyrics" class="pane">
+   <div id="lyrics" aria-live="off"><div class="lyric-empty"><div class="note">♫</div><strong>Prepará tu karaoke</strong><p>Agregá canciones desde tu teléfono. Podés cargar letras sincronizadas o marcar los tiempos mientras cantás.</p><button class="primary" id="addEmpty">Agregar canciones</button></div></div>
+   <div class="ltools">
+    <button id="searchLyrics">Buscar</button><button id="editLyrics">Editar</button><button id="syncLyrics">Sincronizar</button>
+    <button id="offsetPlus" class="quiet" title="Adelantar la letra 0,5 s">Letra antes</button><button id="offsetReset" class="quiet">Reiniciar</button><button id="offsetMinus" class="quiet" title="Retrasar la letra 0,5 s">Letra después</button>
+   </div>
+  </section>
+  <section id="tab-lib" class="pane" hidden>
    <input id="trackSearch" type="search" placeholder="Filtrar por canción o artista…" aria-label="Buscar en biblioteca">
    <ul id="queue"><li class="queue-empty">Todavía no agregaste canciones.</li></ul>
    <button id="addSide" class="add-wide">＋ Agregar canciones</button>
-   <p class="tip">La lista muestra el orden de reproducción. Usá ↑ y ↓ para cambiar qué canción sigue.</p>
   </section>
-  <section class="side-card">
-   <div class="side-head"><h2>Consejos rápidos</h2></div>
-   <p class="tip">• Para mejores resultados, nombrá los archivos como <b>Artista - Canción</b>.<br>• Las letras .LRC se sincronizan automáticamente si tienen el mismo nombre que el audio.<br>• Una letra común también puede sincronizarse marcando cada línea durante la reproducción.</p>
+  <section id="tab-eq" class="pane" hidden>
+   <label class="eq-head"><input type="checkbox" id="eqOn" checked> Ecualizador activo</label>
+   <div id="eqPresets" class="chips"></div>
+   <div id="eqBands"></div>
+   <p class="eq-note">Se aplica a toda la música, con o sin «Quitar voz».</p>
   </section>
- </aside>
-</main>
+ </div>
+ <div class="player">
+  <input class="seek" id="seek" type="range" min="0" max="1" step=".1" value="0" aria-label="Posición de reproducción">
+  <div class="time-row"><span id="elapsed">0:00</span><span id="duration">0:00</span></div>
+  <div class="controls"><button id="voice" aria-pressed="false">○ Quitar voz</button><button id="previous" aria-label="Anterior">|◀</button><button id="play" class="primary play" aria-label="Reproducir">▶</button><button id="next" aria-label="Siguiente">▶|</button></div>
+ </div>
+</div>
 <audio id="audio" preload="metadata"></audio>
 <input id="filePicker" type="file" accept="audio/*,.lrc,.txt,.mp3,.m4a,.flac,.ogg,.opus,.wav,.aac" multiple hidden>
 
@@ -141,7 +180,7 @@ function renderLibrary(){
  for(const {t,i} of filtered){
   const li=document.createElement('li');li.className='track-item'+(i===current?' current':'');
   const pick=document.createElement('button');pick.className='track-pick';pick.innerHTML='<strong></strong><small></small>';
-  pick.querySelector('strong').textContent=t.name;pick.querySelector('small').textContent=(t.artist||'Artista desconocido')+(t.lrc?' · letra cargada':' · sin letra');pick.onclick=()=>playTrack(i);
+  pick.querySelector('strong').textContent=t.name;pick.querySelector('small').textContent=(t.artist||'Artista desconocido')+(t.lrc?' · letra cargada':' · sin letra');pick.onclick=()=>{playTrack(i);showTab('lyrics')};
   const actions=document.createElement('div');actions.className='track-actions';
   const up=document.createElement('button');up.textContent='↑';up.title='Mover hacia arriba';up.disabled=i===0;up.onclick=()=>moveTrack(i,-1);
   const down=document.createElement('button');down.textContent='↓';down.title='Mover hacia abajo';down.disabled=i===tracks.length-1;down.onclick=()=>moveTrack(i,1);
@@ -149,7 +188,7 @@ function renderLibrary(){
   actions.append(up,down,del);li.append(pick,actions);ul.append(li);
  }
 }
-function updateCount(){$('#trackCount').textContent=tracks.length+' '+(tracks.length===1?'canción':'canciones')}
+function updateCount(){$('#trackCount').textContent=tracks.length}
 const dbReady=new Promise((resolve,reject)=>{
  const req=indexedDB.open('mi-karaoke-db',2);
  req.onupgradeneeded=()=>{const db=req.result;if(!db.objectStoreNames.contains('tracks'))db.createObjectStore('tracks',{keyPath:'id',autoIncrement:true})};
@@ -180,7 +219,7 @@ async function addFiles(files){
 }
 function setTrackHeader(t){$('#trackTitle').textContent=t?.name||'Elegí una canción';$('#trackArtist').textContent=t?(t.artist||'Artista no identificado'):'Tu biblioteca está en este dispositivo'}
 async function playTrack(i){
- if(i<0||i>=tracks.length)return;current=i;const t=tracks[i];
+ if(i<0||i>=tracks.length)return;current=i;const t=tracks[i];try{setupVoice();audioCtx.resume()}catch{}
  if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=URL.createObjectURL(t.file);audio.src=objectUrl;
  setTrackHeader(t);showLyrics(t.lrc);renderLibrary();
  try{await audio.play()}catch{toast('Tocá Reproducir para iniciar el audio.')}
@@ -216,7 +255,7 @@ audio.addEventListener('playing',()=>{cancelAnimationFrame(raf);frame();$('#play
 audio.addEventListener('pause',()=>{cancelAnimationFrame(raf);tick();$('#play').textContent='▶';$('#play').setAttribute('aria-label','Reproducir')});
 audio.addEventListener('loadedmetadata',tick);audio.addEventListener('timeupdate',tick);audio.addEventListener('ended',nextTrack);
 seek.addEventListener('input',()=>{audio.currentTime=Number(seek.value);tick()});
-$('#play').onclick=()=>{if(current<0){if(tracks.length)playTrack(0);else $('#filePicker').click()}else if(audio.paused)audio.play();else audio.pause()};
+$('#play').onclick=()=>{if(current<0){if(tracks.length)playTrack(0);else $('#filePicker').click()}else if(audio.paused){try{setupVoice();audioCtx.resume()}catch{}audio.play()}else audio.pause()};
 $('#next').onclick=nextTrack;$('#previous').onclick=previousTrack;
 $('#offsetMinus').onclick=()=>{offset-=.5;activeLine=-1;tick();toast('Letra retrasada 0,5 segundos')};
 $('#offsetPlus').onclick=()=>{offset+=.5;activeLine=-1;tick();toast('Letra adelantada 0,5 segundos')};
@@ -301,6 +340,35 @@ $('#finishSync').onclick=()=>{
 $('#syncDialog').addEventListener('close',()=>{if(audio.paused)$('#syncPlay').textContent='▶ Iniciar reproducción'});
 audio.addEventListener('playing',()=>{if($('#syncDialog').open){$('#syncPlay').textContent='Ⅱ Pausar';renderSync()}});
 audio.addEventListener('pause',()=>{if($('#syncDialog').open){$('#syncPlay').textContent='▶ Continuar reproducción';renderSync()}});
+/* Pestañas */
+function showTab(n){['lyrics','lib','eq'].forEach(k=>{$('#tab-'+k).hidden=k!==n;$('#t-'+k).setAttribute('aria-selected',String(k===n))})}
+['lyrics','lib','eq'].forEach(k=>$('#t-'+k).onclick=()=>showTab(k));
+/* Ecualizador de 5 bandas */
+const EQ_F=[60,230,910,3600,14000],EQ_L=['60 Hz','230 Hz','910 Hz','3,6 kHz','14 kHz'];
+const EQ_P={'Plano':[0,0,0,0,0],'Graves +':[6,4,0,-1,0],'Agudos +':[-1,0,0,3,6],'Rock':[4,2,-2,3,4],'Voz clara':[-2,-1,3,4,1],'Karaoke':[2,0,-4,-3,1]};
+let eqNodes=[],eqG=[0,0,0,0,0],eqEnabled=true;
+try{const sv=JSON.parse(localStorage.getItem('mk-eq')||'null');if(sv){if(Array.isArray(sv.g)&&sv.g.length===5)eqG=sv.g;eqEnabled=sv.on!==false}}catch{}
+const dbTxt=v=>(v>0?'+':'')+v+' dB';
+function eqApply(){
+ if(audioCtx)eqNodes.forEach((n,i)=>n.gain.setTargetAtTime(eqEnabled?eqG[i]:0,audioCtx.currentTime,.03));
+ try{localStorage.setItem('mk-eq',JSON.stringify({g:eqG,on:eqEnabled}))}catch{}
+ [...$('#eqPresets').children].forEach(b=>b.setAttribute('aria-pressed',String(EQ_P[b.textContent].join()===eqG.join())));
+}
+function eqRender(){
+ const box=$('#eqBands'),pr=$('#eqPresets');box.replaceChildren();pr.replaceChildren();$('#eqOn').checked=eqEnabled;
+ EQ_L.forEach((l,i)=>{
+  const row=document.createElement('div');row.className='band';row.innerHTML='<span></span><input type="range" min="-12" max="12" step="1"><output></output>';
+  const [sp,r,o]=row.children;sp.textContent=l;r.value=eqG[i];o.textContent=dbTxt(eqG[i]);r.setAttribute('aria-label',l);
+  r.oninput=()=>{eqG[i]=+r.value;o.textContent=dbTxt(eqG[i]);eqApply()};box.append(row)
+ });
+ for(const k in EQ_P){const b=document.createElement('button');b.textContent=k;b.onclick=()=>{eqG=[...EQ_P[k]];eqRender()};pr.append(b)}
+ eqApply();
+}
+$('#eqOn').onchange=e=>{eqEnabled=e.target.checked;eqApply()};
+eqRender();
+/* El audio puede quedar en pausa hasta un toque del usuario */
+const wake=()=>{if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume()};
+audio.addEventListener('play',wake);document.addEventListener('pointerdown',wake,{passive:true});
 /* Efecto vocal: cancelación central L-R con control de intensidad. No es separación por IA. */
 function setupVoice(){
  if(audioCtx)return;
@@ -309,15 +377,18 @@ function setupVoice(){
  dryGain=audioCtx.createGain();sideGain=audioCtx.createGain();
  splitter=audioCtx.createChannelSplitter(2);merger=audioCtx.createChannelMerger(2);invert=audioCtx.createGain();sideSum=audioCtx.createGain();
  invert.gain.value=-1;sideSum.gain.value=.5;
- sourceNode.connect(dryGain).connect(audioCtx.destination);
+ const eqIn=audioCtx.createGain();
+ eqNodes=EQ_F.map((f,i)=>{const b=audioCtx.createBiquadFilter();b.type=i===0?'lowshelf':i===4?'highshelf':'peaking';b.frequency.value=f;b.Q.value=1;b.gain.value=eqEnabled?eqG[i]:0;return b});
+ eqIn.connect(eqNodes[0]);eqNodes.forEach((n,i)=>n.connect(eqNodes[i+1]||audioCtx.destination));
+ sourceNode.connect(dryGain).connect(eqIn);
  sourceNode.connect(splitter);splitter.connect(sideSum,0);splitter.connect(invert,1);invert.connect(sideSum);
- sideSum.connect(merger,0,0);sideSum.connect(merger,0,1);merger.connect(sideGain).connect(audioCtx.destination);
+ sideSum.connect(merger,0,0);sideSum.connect(merger,0,1);merger.connect(sideGain).connect(eqIn);
  dryGain.gain.value=1;sideGain.gain.value=0;
 }
 $('#voice').onclick=async()=>{
  try{setupVoice();await audioCtx.resume();voiceOn=!voiceOn;
   const now=audioCtx.currentTime;dryGain.gain.setTargetAtTime(voiceOn?.12:1,now,.04);sideGain.gain.setTargetAtTime(voiceOn?1:0,now,.04);
-  $('#voice').setAttribute('aria-pressed',String(voiceOn));$('#voice').textContent=voiceOn?'◉ Efecto vocal activo':'◉ Quitar voz';
+  $('#voice').setAttribute('aria-pressed',String(voiceOn));$('#voice').textContent=voiceOn?'● Voz quitada':'○ Quitar voz';
   toast(voiceOn?'Efecto de reducción vocal activado.':'Audio original restaurado.')
  }catch{toast('Este navegador no permite aplicar el efecto de audio.')}
 };
