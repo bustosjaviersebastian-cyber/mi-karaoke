@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#17122b">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<title>Mi Karaoke</title>
+<style>
+:root{--bg:#17122b;--sf:#241c42;--tx:#f3efff;--dim:#8f85b8;--ac:#ffd23f;--hot:#ff4f8b;color-scheme:dark}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--tx);font:16px/1.4 system-ui,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+header{padding:12px 16px;display:flex;align-items:center;gap:12px}
+#title{flex:1;min-width:0}
+#t{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700}
+#title small{color:var(--dim)}
+button{font:inherit;color:inherit;background:var(--sf);border:0;border-radius:12px;padding:10px 14px;min-height:44px;cursor:pointer}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+#lyr{flex:1;overflow-y:auto;padding:28vh 20px;text-align:center;scroll-behavior:smooth}
+#lyr p{font-size:clamp(1.3rem,6vw,1.85rem);font-weight:700;line-height:1.25;color:var(--dim);margin:.55em 0;transition:color .2s,transform .2s}
+#lyr p.on{color:var(--ac);transform:scale(1.1)}
+.empty{color:var(--dim)}
+.empty p{font-size:1.1rem!important;font-weight:400!important;margin-bottom:1em!important}
+.empty button{margin:4px}
+footer{padding:8px 16px 16px;display:grid;gap:10px}
+.row{display:flex;gap:8px;align-items:center}
+.row>*{flex:1}
+.row.sm button{font-size:.85rem;padding:8px;min-height:40px}
+#bar{width:100%;accent-color:var(--ac)}
+#time{display:flex;justify-content:space-between;color:var(--dim);font-size:.85rem}
+#pp{background:var(--ac);color:var(--bg);font-weight:700;flex:1.6}
+#kar{background:var(--sf);font-weight:700;min-height:52px}
+#kar[aria-pressed=true]{background:var(--hot);color:var(--bg)}
+dialog{background:var(--sf);color:var(--tx);border:0;border-radius:16px;width:min(92vw,480px);max-height:80vh;padding:16px}
+dialog::backdrop{background:#000a}
+dialog h2{font-size:1.1rem;margin-bottom:10px}
+#list{list-style:none;padding:0;display:grid;gap:6px;margin-bottom:12px;max-height:50vh;overflow:auto}
+#list li{display:flex;gap:6px}
+#list li button{background:var(--bg)}
+#list li button:first-child{flex:1;text-align:left}
+#list button[aria-current=true]{color:var(--ac);font-weight:700}
+textarea{width:100%;height:40vh;background:var(--bg);color:var(--tx);border:1px solid var(--dim);border-radius:10px;padding:10px;font:inherit;margin-bottom:10px}
+#toast{position:fixed;left:50%;bottom:calc(150px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--tx);color:var(--bg);padding:10px 16px;border-radius:12px;max-width:90vw;font-size:.9rem}
+[hidden]{display:none!important}
+@media (prefers-reduced-motion:reduce){#lyr{scroll-behavior:auto}#lyr p{transition:none}}
+</style>
+</head>
+<body>
+<header>
+  <div id="title"><span id="t">Mi Karaoke</span><small id="sub">Sin canciones</small></div>
+  <button id="openList">Canciones</button>
+</header>
+
+<main id="lyr" aria-live="off"></main>
+
+<footer>
+  <input id="bar" type="range" min="0" max="1" step="0.1" value="0" aria-label="Posición">
+  <div id="time"><span id="now">0:00</span><span id="dur">0:00</span></div>
+  <div class="row">
+    <button id="prev">Anterior</button>
+    <button id="pp">Reproducir</button>
+    <button id="next">Siguiente</button>
+  </div>
+  <button id="kar" aria-pressed="false">Quitar voz</button>
+  <div class="row sm">
+    <button id="find">Buscar letra</button>
+    <button id="pasteBtn">Pegar letra</button>
+    <button id="early" hidden>Letra antes</button>
+    <button id="late" hidden>Letra después</button>
+  </div>
+</footer>
+
+<audio id="au" preload="metadata"></audio>
+<input id="pick" type="file" accept="audio/*,.lrc,.txt,.mp3,.m4a,.flac,.ogg,.opus,.wav,.aac" multiple hidden>
+
+<dialog id="dl">
+  <h2>Canciones</h2>
+  <ul id="list"></ul>
+  <div class="row"><button id="add">Agregar canciones</button><button id="closeList">Cerrar</button></div>
+</dialog>
+
+<dialog id="dp">
+  <h2>Letra de la canción</h2>
+  <textarea id="ta" placeholder="Pegá la letra acá. Si tiene tiempos tipo [01:23.45], se sincroniza sola."></textarea>
+  <div class="row"><button id="savePaste">Guardar letra</button><button id="closePaste">Cancelar</button></div>
+</dialog>
+
+<div id="toast" hidden></div>
+
+<script>
+const $=s=>document.querySelector(s),au=$('#au'),bar=$('#bar');
+let tracks=[],idx=-1,ctx,normal,cut,kar=false,lines=[],synced=false,cur=-1,off=0,raf,tt;
+const base=n=>n.replace(/\.[^.]+$/,'').toLowerCase().trim();
+const fmt=s=>isFinite(s)?Math.floor(s/60)+':'+String(Math.floor(s%60)).padStart(2,'0'):'0:00';
+const toast=m=>{const e=$('#toast');e.textContent=m;e.hidden=false;clearTimeout(tt);tt=setTimeout(()=>e.hidden=true,3500)};
+const load=b=>{try{return localStorage.getItem('lyr:'+b)}catch{return null}};
+const save=(t,x)=>{t.lrc=x;try{localStorage.setItem('lyr:'+base(t.name),x)}catch{}};
+/* Biblioteca guardada en el teléfono (IndexedDB) */
+const db=new Promise((ok,no)=>{const r=indexedDB.open('karaoke',1);r.onupgradeneeded=()=>r.result.createObjectStore('t',{keyPath:'id',autoIncrement:true});r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)});
+db.catch(()=>{});
+const tx=async(m,f)=>{const d=await db;return new Promise((ok,no)=>{const q=f(d.transaction('t',m).objectStore('t'));q.onsuccess=()=>ok(q.result);q.onerror=()=>no(q.error)})};
+const updSub=()=>{$('#sub').textContent=tracks.length?tracks.length+' canciones':'Sin canciones'};
+
+/* ---------- Audio: quitar voz ---------- */
+function setupAudio(){
+  if(ctx)return;
+  ctx=new (window.AudioContext||window.webkitAudioContext)();
+  const src=ctx.createMediaElementSource(au);
+  normal=ctx.createGain();cut=ctx.createGain();
+  cut.channelCount=1;cut.channelCountMode='explicit';
+  const sp=ctx.createChannelSplitter(2),inv=ctx.createGain(),sum=ctx.createGain(),
+        hp=ctx.createBiquadFilter(),lp=ctx.createBiquadFilter();
+  sum.channelCount=1;sum.channelCountMode='explicit';
+  inv.gain.value=-1;
+  hp.type='highpass';hp.frequency.value=150;
+  lp.type='lowpass';lp.frequency.value=150;
+  src.connect(normal).connect(ctx.destination);
+  src.connect(sp);sp.connect(sum,0);sp.connect(inv,1);inv.connect(sum); // izquierdo − derecho
+  sum.connect(hp).connect(cut);   // medios y agudos sin el centro (voz)
+  src.connect(lp).connect(cut);   // graves originales
+  cut.connect(ctx.destination);
+  applyKar(true);
+}
+function applyKar(now){
+  if(!ctx)return;
+  const t=now?ctx.currentTime:ctx.currentTime+.0,k=.03;
+  normal.gain.setTargetAtTime(kar?0:1,t,k);
+  cut.gain.setTargetAtTime(kar?1.3:0,t,k);
+}
+$('#kar').onclick=e=>{
+  kar=!kar;e.currentTarget.setAttribute('aria-pressed',kar);
+  e.currentTarget.textContent=kar?'Voz quitada':'Quitar voz';
+  applyKar();
+};
+
+/* ---------- Letra ---------- */
+function parse(t){
+  const out=[];
+  for(const raw of t.split(/\r?\n/)){
+    const ts=[...raw.matchAll(/\[(\d+):(\d+(?:\.\d+)?)\]/g)];
+    const s=raw.replace(/\[[^\]]*\]/g,'').trim();
+    if(ts.length)for(const m of ts)out.push({t:+m[1]*60+ +m[2],s});
+    else if(s)out.push({t:null,s});
+  }
+  if(out.some(l=>l.t!=null))return out.filter(l=>l.t!=null).sort((a,b)=>a.t-b.t);
+  return out;
+}
+function empty(kind){
+  if(kind==='ready'){$('#lyr').innerHTML='<div class="empty"><p>Tu biblioteca está lista. Tocá Reproducir o elegí una canción en Canciones.</p></div>';return}
+  $('#lyr').innerHTML=kind==='start'
+   ?'<div class="empty"><p>Elegí canciones de tu celular. Si en la misma selección incluís el archivo .lrc con el mismo nombre, la letra se carga sola.</p><button data-a="add">Agregar canciones</button></div>'
+   :'<div class="empty"><p>Esta canción todavía no tiene letra.</p><button data-a="find">Buscar online</button><button data-a="paste">Pegar letra</button></div>';
+}
+function setLyrics(x){
+  const box=$('#lyr');box.innerHTML='';cur=-1;off=0;lines=[];
+  if(!x){synced=false;empty('nolyr');syncBtns();return}
+  lines=parse(x);synced=lines.some(l=>l.t!=null);
+  for(const l of lines){const p=document.createElement('p');p.textContent=l.s||'♪';box.append(p)}
+  box.scrollTop=0;syncBtns();
+}
+const syncBtns=()=>{$('#early').hidden=$('#late').hidden=!synced};
+$('#lyr').onclick=e=>{
+  const a=e.target.dataset.a;
+  if(a==='add')$('#pick').click();
+  if(a==='find')findLyrics();
+  if(a==='paste')openPaste();
+};
+async function findLyrics(auto){
+  const t=tracks[idx];if(!t)return toast('Primero elegí una canción.');
+  if(!auto)toast('Buscando letra…');
+  try{
+    const q=t.name.replace(/\(.*?\)|\[.*?\]/g,'').replace(/[_-]+/g,' ').trim();
+    const r=await fetch('https://lrclib.net/api/search?q='+encodeURIComponent(q));
+    const d=await r.json();
+    const h=d.find(x=>x.syncedLyrics)||d.find(x=>x.plainLyrics);
+    if(!h)return auto?0:toast('No encontré la letra. Podés pegarla a mano.');
+    save(t,h.syncedLyrics||h.plainLyrics);renderList();if(tracks[idx]!==t)return;setLyrics(t.lrc);
+    toast((h.syncedLyrics?'Sincronizada: ':'Sin sincronizar: ')+h.artistName+' – '+h.trackName);
+  }catch{if(!auto)toast('No hay conexión o el servicio no responde.')}
+}
+function openPaste(){if(idx<0)return toast('Primero elegí una canción.');$('#ta').value=tracks[idx].lrc||'';$('#dp').showModal()}
+$('#find').onclick=findLyrics;
+$('#pasteBtn').onclick=openPaste;
+$('#closePaste').onclick=()=>$('#dp').close();
+$('#savePaste').onclick=()=>{const x=$('#ta').value.trim();if(x){save(tracks[idx],x);setLyrics(x)}$('#dp').close()};
+$('#early').onclick=()=>{off+=.5;toast('Letra adelantada 0,5 s')};
+$('#late').onclick=()=>{off-=.5;toast('Letra atrasada 0,5 s')};
+
+function tick(){
+  const c=au.currentTime;
+  if(synced){
+    const t=c+off;let i=-1;
+    for(let k=0;k<lines.length&&lines[k].t<=t;k++)i=k;
+    if(i!==cur){
+      const ps=$('#lyr').children;
+      if(ps[cur])ps[cur].classList.remove('on');
+      cur=i;
+      if(i>=0){ps[i].classList.add('on');ps[i].scrollIntoView({block:'center'})}
+    }
+  }
+  bar.value=c;$('#now').textContent=fmt(c);
+}
+const loop=()=>{tick();raf=requestAnimationFrame(loop)};
+au.onplaying=()=>{cancelAnimationFrame(raf);loop();$('#pp').textContent='Pausar'};
+au.onpause=()=>{cancelAnimationFrame(raf);tick();$('#pp').textContent='Reproducir'};
+au.onloadedmetadata=()=>{bar.max=au.duration;$('#dur').textContent=fmt(au.duration)};
+au.onended=()=>next();
+bar.oninput=()=>{au.currentTime=bar.value};
+
+/* ---------- Biblioteca y reproducción ---------- */
+$('#pick').onchange=async e=>{
+  const fs=[...e.target.files],map={};
+  for(const f of fs.filter(f=>/\.(lrc|txt)$/i.test(f.name)))map[base(f.name)]=await f.text();
+  const aud=fs.filter(f=>f.type.startsWith('audio/')||/\.(mp3|m4a|flac|ogg|opus|wav|aac)$/i.test(f.name));
+  for(const f of aud){
+    const n=f.name.replace(/\.[^.]+$/,''),b=base(f.name),t={name:n,file:f};
+    if(tracks.some(x=>base(x.name)===b))continue;
+    if(map[b])save(t,map[b]);else t.lrc=load(b);
+    try{t.id=await tx('readwrite',s=>s.add({name:n,file:f}))}catch{toast('No se pudo guardar en el teléfono. La canción queda solo por esta sesión.')}
+    tracks.push(t);
+  }
+  e.target.value='';
+  if(!aud.length)return toast('No encontré archivos de audio en la selección.');
+  renderList();updSub();
+  if(idx<0)play(0);
+};
+function play(i){
+  if(i<0||i>=tracks.length)return;
+  idx=i;const t=tracks[i];
+  if(au.dataset.u)URL.revokeObjectURL(au.dataset.u);
+  const u=URL.createObjectURL(t.file);au.dataset.u=u;au.src=u;
+  setupAudio();ctx.resume();au.play().catch(()=>{});
+  $('#t').textContent=t.name;
+  setLyrics(t.lrc);renderList();
+  if(!t.lrc&&navigator.onLine)findLyrics(true);
+  if('mediaSession' in navigator)navigator.mediaSession.metadata=new MediaMetadata({title:t.name,artist:'Mi Karaoke'});
+}
+const next=()=>play(idx+1<tracks.length?idx+1:0);
+const prev=()=>au.currentTime>3?au.currentTime=0:play(idx>0?idx-1:tracks.length-1);
+$('#next').onclick=next;$('#prev').onclick=prev;
+$('#pp').onclick=()=>{if(idx<0)return tracks.length?play(0):$('#pick').click();au.paused?(ctx&&ctx.resume(),au.play()):au.pause()};
+function renderList(){
+  const ul=$('#list');ul.innerHTML='';
+  tracks.forEach((t,i)=>{
+    const li=document.createElement('li'),b=document.createElement('button'),x=document.createElement('button');
+    b.textContent=t.name+(t.lrc?'  ·  con letra':'');
+    if(i===idx)b.setAttribute('aria-current','true');
+    b.onclick=()=>{play(i);$('#dl').close()};
+    x.textContent='Quitar';x.setAttribute('aria-label','Quitar '+t.name);
+    x.onclick=()=>removeTrack(i);
+    li.append(b,x);ul.append(li);
+  });
+}
+async function removeTrack(i){
+  const t=tracks[i];
+  try{if(t.id!=null)await tx('readwrite',s=>s.delete(t.id))}catch{}
+  if(i===idx){au.pause();au.removeAttribute('src');idx=-1;synced=false;lines=[];cur=-1;syncBtns();$('#t').textContent='Mi Karaoke';empty('ready')}
+  else if(i<idx)idx--;
+  tracks.splice(i,1);renderList();updSub();
+  if(!tracks.length)empty('start');
+}
+$('#openList').onclick=()=>$('#dl').showModal();
+$('#closeList').onclick=()=>$('#dl').close();
+$('#add').onclick=()=>$('#pick').click();
+
+if('mediaSession' in navigator){
+  const h={play:()=>au.play(),pause:()=>au.pause(),previoustrack:prev,nexttrack:next,seekto:d=>{au.currentTime=d.seekTime}};
+  for(const k in h)try{navigator.mediaSession.setActionHandler(k,h[k])}catch{}
+}
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');
+(async()=>{
+  empty('start');
+  try{
+    const all=await tx('readonly',s=>s.getAll());
+    for(const r of all)tracks.push({id:r.id,name:r.name,file:r.file,lrc:load(base(r.name))});
+    if(tracks.length){renderList();updSub();empty('ready')}
+  }catch{}
+  try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch{}
+})();
+</script>
+</body>
+</html>
