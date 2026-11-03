@@ -63,7 +63,7 @@ textarea{min-height:220px;resize:vertical;line-height:1.5}.field{margin:5px 0 10
    <input class="seek" id="seek" type="range" min="0" max="1" step=".1" value="0" aria-label="Posición de reproducción">
    <div class="time-row"><span id="elapsed">0:00</span><span id="duration">0:00</span></div>
    <div class="controls"><button id="previous" aria-label="Anterior">|◀</button><button id="play" class="primary play" aria-label="Reproducir">▶</button><button id="next" aria-label="Siguiente">▶|</button></div>
-   <div class="tools"><button id="voice" aria-pressed="false">◉ Quitar voz</button><button id="searchLyrics">Buscar letra</button><button id="editLyrics">Pegar / editar letra</button><button id="syncLyrics">Sincronizar letra</button><button id="offsetMinus" class="small">Letra −0,5 s</button><button id="offsetPlus" class="small">Letra +0,5 s</button></div>
+   <div class="tools"><button id="voice" aria-pressed="false">◉ Quitar voz</button><button id="searchLyrics">Buscar letra</button><button id="editLyrics">Pegar / editar letra</button><button id="syncLyrics">Sincronizar letra</button><button id="offsetPlus" class="small">Adelantar letra 0,5 s</button><button id="offsetMinus" class="small">Retrasar letra 0,5 s</button><button id="offsetReset" class="small">Restablecer letra</button></div>
   </div>
  </section>
  <aside class="side">
@@ -98,7 +98,8 @@ textarea{min-height:220px;resize:vertical;line-height:1.5}.field{margin:5px 0 10
 <dialog id="syncDialog">
  <h2>Sincronización manual</h2><p class="desc">Reproducí la canción. Cuando escuches el comienzo de la línea resaltada, tocá «Marcar línea». La aplicación guardará el tiempo exacto.</p>
  <div id="syncLine" class="sync-current">Preparando letra…</div><div id="syncProgress" class="sync-meta">0 de 0 líneas marcadas</div>
- <div class="dialog-actions"><button id="markLine" class="primary">Marcar línea ●</button><button id="undoMark">Deshacer</button><button id="finishSync">Terminar</button></div>
+ <div class="dialog-actions"><button id="syncPlay" class="primary">▶ Iniciar reproducción</button><button id="syncRestart">↺ Volver al inicio</button></div>
+ <div class="dialog-actions"><button id="markLine" class="primary" disabled>Marcar línea ●</button><button id="undoMark">Deshacer marca</button><button id="finishSync">Guardar sincronización</button></div>
  <div id="syncPreview" class="sync-list"></div>
 </dialog>
 <div id="toast" hidden></div>
@@ -150,10 +151,8 @@ function renderLibrary(){
 }
 function updateCount(){$('#trackCount').textContent=tracks.length+' '+(tracks.length===1?'canción':'canciones')}
 const dbReady=new Promise((resolve,reject)=>{
- const req=indexedDB.open('karaoke',2);
- req.onupgradeneeded=()=>{const db=req.result,upgradeTx=req.transaction;if(!db.objectStoreNames.contains('tracks'))db.createObjectStore('tracks',{keyPath:'id',autoIncrement:true});
-  if(db.objectStoreNames.contains('t')){const old=upgradeTx.objectStore('t'),dest=upgradeTx.objectStore('tracks');old.openCursor().onsuccess=e=>{const c=e.target.result;if(c){const v=c.value;dest.put({id:v.id,name:v.name,artist:'',file:v.file,lrc:null,order:v.id||0});c.continue()}}}
- };
+ const req=indexedDB.open('mi-karaoke-db',2);
+ req.onupgradeneeded=()=>{const db=req.result;if(!db.objectStoreNames.contains('tracks'))db.createObjectStore('tracks',{keyPath:'id',autoIncrement:true})};
  req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)
 });
 function dbAction(mode,fn){return dbReady.then(db=>new Promise((resolve,reject)=>{const tx=db.transaction('tracks',mode),store=tx.objectStore('tracks');let req;try{req=fn(store)}catch(e){reject(e);return}if(req){req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)}else{tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error)}}))}
@@ -170,7 +169,7 @@ async function addFiles(files){
   const info=deriveInfo(file.name),key=normalize(info.name);
   if(tracks.some(t=>normalize(t.name)===key&&normalize(t.artist)===normalize(info.artist)))continue;
   const track={name:info.name,artist:info.artist,file,lrc:null};
-  const companion=lyricMap.get(normalize(file.name))||lyricMap.get(normalize(info.name));
+  const companion=lyricMap.get(normalize(file.name).replace(/\.(mp3|m4a|flac|ogg|opus|wav|aac|webm)$/i,'.lrc'))||lyricMap.get(normalize(file.name).replace(/\.(mp3|m4a|flac|ogg|opus|wav|aac|webm)$/i,'.txt'))||lyricMap.get(normalize(info.name+'.lrc'))||lyricMap.get(normalize(info.name+'.txt'));
   if(companion)track.lrc=companion;else try{track.lrc=localStorage.getItem(trackKey(track))}catch{}
   try{track.id=await dbAction('readwrite',s=>s.add({name:track.name,artist:track.artist,file,lrc:track.lrc}))}catch(e){toast('No se pudo guardar una canción en la biblioteca del dispositivo.')}
   tracks.push(track);added++;
@@ -219,8 +218,9 @@ audio.addEventListener('loadedmetadata',tick);audio.addEventListener('timeupdate
 seek.addEventListener('input',()=>{audio.currentTime=Number(seek.value);tick()});
 $('#play').onclick=()=>{if(current<0){if(tracks.length)playTrack(0);else $('#filePicker').click()}else if(audio.paused)audio.play();else audio.pause()};
 $('#next').onclick=nextTrack;$('#previous').onclick=previousTrack;
-$('#offsetMinus').onclick=()=>{offset-=.5;toast('Letra retrasada 0,5 segundos')};
-$('#offsetPlus').onclick=()=>{offset+=.5;toast('Letra adelantada 0,5 segundos')};
+$('#offsetMinus').onclick=()=>{offset-=.5;activeLine=-1;tick();toast('Letra retrasada 0,5 segundos')};
+$('#offsetPlus').onclick=()=>{offset+=.5;activeLine=-1;tick();toast('Letra adelantada 0,5 segundos')};
+$('#offsetReset').onclick=()=>{offset=0;activeLine=-1;tick();toast('Sincronización visual restablecida')};
 $('#trackSearch').oninput=renderLibrary;
 ['addTop','addSide','addEmpty'].forEach(id=>$('#'+id).onclick=()=>$('#filePicker').click());
 $('#filePicker').onchange=e=>addFiles(e.target.files);
@@ -270,32 +270,37 @@ function renderSync(){
  $('#syncLine').textContent=syncLines[syncIndex]?.text||'¡Sincronización completa!';
  const preview=$('#syncPreview');preview.replaceChildren();
  syncLines.forEach((l,i)=>{const d=document.createElement('div');d.textContent=(Number.isFinite(l.time)?`[${fmt(l.time)}] `:'')+l.text;if(i===syncIndex)d.className='nextline';preview.append(d)});
- $('#markLine').disabled=syncIndex>=total;
+ $('#markLine').disabled=syncIndex>=total||audio.paused;
 }
 $('#syncLyrics').onclick=()=>{
  if(current<0)return toast('Primero elegí una canción.');
- const t=tracks[current];syncOriginal=t.lrc||'';
- syncLines=parseLRC(syncOriginal).map(x=>({time:null,text:x.text}));
- if(!syncLines.length)return toast('Primero pegá una letra.');
- if(hasTimedLines(parseLRC(syncOriginal)))syncLines=parseLRC(syncOriginal).map(x=>({...x}));
- syncIndex=syncLines.findIndex(x=>!Number.isFinite(x.time));if(syncIndex<0)syncIndex=syncLines.length;
- renderSync();$('#syncDialog').showModal();
- if(audio.paused)audio.play().catch(()=>{});
+ const parsed=parseLRC(tracks[current].lrc||'');
+ if(!parsed.length)return toast('Primero pegá una letra.');
+ // Se reinicia toda la marcación: evita abrir el sincronizador al final de una letra ya marcada.
+ syncLines=parsed.map(x=>({time:null,text:x.text}));syncIndex=0;
+ audio.pause();try{audio.currentTime=0}catch{}
+ $('#syncPlay').textContent='▶ Iniciar reproducción';renderSync();$('#syncDialog').showModal();
 };
-$('#markLine').onclick=()=>{
- if(syncIndex>=syncLines.length)return;
- syncLines[syncIndex].time=audio.currentTime;syncIndex++;
- while(syncIndex<syncLines.length&&Number.isFinite(syncLines[syncIndex].time))syncIndex++;
- renderSync();
+$('#syncPlay').onclick=async()=>{
+ if(audio.paused){try{await audio.play();$('#syncPlay').textContent='Ⅱ Pausar';renderSync()}catch{toast('No se pudo iniciar la reproducción.')}}
+ else{audio.pause();$('#syncPlay').textContent='▶ Continuar reproducción';renderSync()}
 };
-$('#undoMark').onclick=()=>{let i=Math.min(syncIndex-1,syncLines.length-1);while(i>=0&&!Number.isFinite(syncLines[i].time))i--;if(i>=0){syncLines[i].time=null;syncIndex=i;renderSync()}};
+$('#syncRestart').onclick=()=>{
+ audio.pause();audio.currentTime=0;syncIndex=0;syncLines.forEach(x=>x.time=null);
+ $('#syncPlay').textContent='▶ Iniciar reproducción';renderSync();toast('Volviste al comienzo. Las marcas se reiniciaron.')
+};
+$('#markLine').onclick=()=>{if(syncIndex>=syncLines.length||audio.paused)return;syncLines[syncIndex].time=audio.currentTime;syncIndex++;renderSync()};
+$('#undoMark').onclick=()=>{const i=Math.min(syncIndex-1,syncLines.length-1);if(i>=0){syncLines[i].time=null;syncIndex=i;renderSync()}};
 $('#finishSync').onclick=()=>{
  const valid=syncLines.filter(x=>Number.isFinite(x.time)).sort((a,b)=>a.time-b.time);
+ if(valid.length!==syncLines.length){return toast(`Todavía faltan ${syncLines.length-valid.length} líneas. Marcá todas antes de guardar.`)}
  if(!valid.length){$('#syncDialog').close();return toast('No se marcó ninguna línea.')}
  const lrc=valid.map(x=>`[${String(Math.floor(x.time/60)).padStart(2,'0')}:${(x.time%60).toFixed(2).padStart(5,'0')}]${x.text}`).join('\n');
- const t=tracks[current];saveLyrics(t,lrc);showLyrics(lrc);renderLibrary();$('#syncDialog').close();toast(`Sincronizadas ${valid.length} líneas.`)
+ const t=tracks[current];saveLyrics(t,lrc);showLyrics(lrc);renderLibrary();$('#syncDialog').close();toast(`Guardadas ${valid.length} marcas. Ajustá el adelanto desde los controles de letra si hace falta.`)
 };
-
+$('#syncDialog').addEventListener('close',()=>{if(audio.paused)$('#syncPlay').textContent='▶ Iniciar reproducción'});
+audio.addEventListener('playing',()=>{if($('#syncDialog').open){$('#syncPlay').textContent='Ⅱ Pausar';renderSync()}});
+audio.addEventListener('pause',()=>{if($('#syncDialog').open){$('#syncPlay').textContent='▶ Continuar reproducción';renderSync()}});
 /* Efecto vocal: cancelación central L-R con control de intensidad. No es separación por IA. */
 function setupVoice(){
  if(audioCtx)return;
@@ -313,7 +318,7 @@ $('#voice').onclick=async()=>{
  try{setupVoice();await audioCtx.resume();voiceOn=!voiceOn;
   const now=audioCtx.currentTime;dryGain.gain.setTargetAtTime(voiceOn?.12:1,now,.04);sideGain.gain.setTargetAtTime(voiceOn?1:0,now,.04);
   $('#voice').setAttribute('aria-pressed',String(voiceOn));$('#voice').textContent=voiceOn?'◉ Efecto vocal activo':'◉ Quitar voz';
-  toast(voiceOn?'Reduce principalmente la voz centrada; puede afectar instrumentos centrales.':'Audio original restaurado.')
+  toast(voiceOn?'Efecto de reducción vocal activado.':'Audio original restaurado.')
  }catch{toast('Este navegador no permite aplicar el efecto de audio.')}
 };
 if('mediaSession'in navigator){
